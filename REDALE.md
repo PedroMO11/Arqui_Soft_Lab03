@@ -15,7 +15,7 @@ intermediary for the whole operation and does not delegate the payout to a partn
 
 ## R - Requirements
 
-Problems to solve.
+### Problems to solve
 
 Sender:
 - His bank does not allow transfers to banks in other countries.
@@ -39,11 +39,43 @@ SendIt at the counter:
 - Without a record that cannot be modified there is no way to prove what was collected and
   what was paid.
 
-Constraints:
-- The money collected has to match the money payable. It cannot be paid twice or lost.
-- A slow external provider cannot block the counter.
-- Quote and status lookup have to respond fast enough for someone waiting at a counter.
-- Information has to be protected in transit and at rest.
+### Functional requirements
+
+- Register branch agents, authenticate them at the counter and control what each one can
+  do according to his role.
+- Verify the identity of the sender before creating the remittance. No amount is exempt.
+- Verify the identity of the recipient against the data registered in that remittance
+  before releasing any money.
+- Quote the exchange rate and the fee, and hold both for a fixed window before the sender
+  confirms.
+- Create the remittance on an active corridor.
+- Capture the payment at the counter, in cash or by card.
+- Generate a unique tracking code for each remittance.
+- Allow the status to be consulted with the tracking code alone, without an account.
+- Notify sender and recipient on each change of state.
+- Reserve the payout amount in the destination country before announcing the money as
+  available.
+- Take the reserved funds from SendIt's own cash, from the corporate account or from bank
+  partners, in that order.
+- Pay out as cash at a branch or as a deposit into a bank account.
+- Allow one single payout per remittance.
+- Expire the remittances that are not collected within the collection window and keep the
+  funds.
+- Issue a receipt when the remittance is paid.
+- Register every change of state in a record that cannot be modified afterwards.
+
+### Non-functional requirements
+
+- Consistency. The money collected has to match the money payable. It cannot be paid twice
+  or lost.
+- Availability. The counter has to keep working when an external provider is slow or
+  unavailable.
+- Performance. Quote and status lookup have to respond fast enough for a person waiting at
+  a counter.
+- Security. Information is protected in transit and at rest, and the identity data of both
+  parties is only visible to those who need it.
+- Auditability. The history of each remittance stays available and readable for audit.
+- Scalability. The system has to support the volume estimated in section E.
 
 ---
 
@@ -109,7 +141,8 @@ Creating the remittance.
 |---|---|
 | Registration Service | Registers the remittance: amount, corridor, recipient and payout channel |
 | Validation Service | Validates the remittance data: active corridor, complete recipient data, limits |
-| Money Laundering Service | Checks who the two parties are. Verifies the identity of sender and recipient with the KYC provider and takes its verdict. Payment capture is blocked until it approves |
+| KYC Service | Checks who the two parties are. Verifies the identity of sender and recipient with the external provider and takes its verdict. Payment capture is blocked until it approves |
+| User Risk Service | Receives from the KYC Service the users suspected of malicious intent, notifies the user and escalates the case to the external security service |
 | Money exchange Service | Gets the rate from the FX provider and locks the quote for its validity window |
 | Transaction Code Service | Generates the tracking code |
 | Payment Capture Service | Takes cash or card at the counter. Until it succeeds there is no money |
@@ -125,6 +158,7 @@ Moving the money.
 | Self-fund Service | SendIt's own cash, money already collected from other senders in that country. First source used |
 | Corp-fund Service | SendIt's corporate account. Used when the own cash does not cover the amount |
 | Bank Service | Bank partners. Used when the amount is too large, or when neither the own cash nor the corporate account cover it |
+| Money Funding Service | Brings money into the reserve when the reservation finds an insufficient balance in the destination country |
 
 Paying out.
 
@@ -141,8 +175,31 @@ Status and closing.
 |---|---|
 | View Transaction Service | Shows the status to sender or recipient, without an account |
 | Transaction Code verification Service | Validates the tracking code used to look up or to collect |
-| Notification Service | Notifies sender and recipient on each status change |
 | Expiration Service | Expires remittances that pass the collection window. The funds stay with SendIt and the reservation returns to the reserve |
+
+Administration of the transaction.
+
+| Service | What it does |
+|---|---|
+| Transaction Administration Service | Entry point for everything that happens to a remittance after it is registered and outside the normal flow |
+| Refund Service | Returns the money to the sender when the remittance does not reach the recipient |
+| Cancel Service | Cancels a remittance that has not been paid yet |
+| Complaints Service | Registers and follows up the claims of sender or recipient |
+
+Notifications.
+
+| Service | What it does |
+|---|---|
+| Notification Service | Notifies sender and recipient on each status change, and sends the transaction code to the recipient when the amount is large |
+| Email Service | Delivers the notification by email |
+| SMS Service | Delivers the notification by SMS |
+
+External systems.
+
+| Service | What it does |
+|---|---|
+| External Security Service | Receives the cases escalated by the User Risk Service |
+| External Bank Service | The bank that holds SendIt's accounts and executes the deposits |
 
 ---
 
@@ -307,45 +364,34 @@ is registered as a new remittance and not as a change to this one.
 
 ### Iteration 1
 
-```mermaid
-flowchart LR
-    S([Sender]) --> INT([Intermediary])
-    INT --> LOGIN[Login Service]
-    REG[Register Service] --> LOGIN
-    LOGIN --> SEC[Security Service]
-
-    LOGIN --> RS[Registration Service]
-    RS --> VAL[Validation Service]
-    VAL --> AML[Money Laundering Service]
-    AML --> FX[Money exchange Service]
-    RS --> TC[Transaction Code Service]
-
-    RS --> TR[Transfer Service]
-    TR --> MA[Money Administration Service]
-    MA --> MR[Money reservation Service]
-    MR --> CORP[Corp-fund Service]
-    MR --> SELF[Self-fund Service]
-    MR --> BANK[Bank Service]
-    CORP --> RES[Reserve Service]
-    SELF --> RES
-    BANK --> RES
-    WD[Withdraw Service] --> RES
-
-    MA --> RCP[Recipient Service]
-    RCP --> RID[Recipient identification service]
-    RID --> WD
-    RCP --> R([Recipient])
-
-    S --> VT[View Transaction Service]
-    R --> VT
-    VT --> TCV[Transaction Code verification Service]
-```
+![Iteration 1](images/iter1.png)
 
 Order enforced in this iteration: the sender's identity is verified before the remittance
 is created, the amount is reserved in the destination before the recipient is told the
 money is available, and the recipient's identity is verified before the money is released.
 
 Only the path where every step works is drawn. Failures are not covered yet.
+
+### Iteration 2
+
+![Iteration 2](images/iter2.png)
+
+Blue services are SendIt's own, green ones are the delivery channels of the notifications,
+yellow ones are the paths that only run under a specific condition, and pink ones are
+external systems. The circles marked BD are the points where state is stored.
+
+The identity of both parties is verified by the KYC Service. When it suspects malicious
+intent the User Risk Service takes the case, notifies the user and escalates it to the
+external security service. Notifications reach the user by email or SMS, and the same
+channel sends the transaction code to the recipient when the amount is large.
+
+The reservation of money asks the reserve of the destination country. When the balance is
+not enough the Money Funding Service brings money in, taken from SendIt's own cash, from
+the corporate account or from the bank partners.
+
+A remittance that is already registered is handled by the Transaction Administration
+Service, which covers the refund to the sender, the cancellation of a remittance that has
+not been paid, and the claims of either party.
 
 ---
 
