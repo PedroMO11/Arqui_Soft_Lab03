@@ -1,37 +1,47 @@
 # Aaron Camacho — Sender
 
 ## Role
-Individual who initiates a money transfer to a family member or acquaintance in another
-country. Visits a SendIt branch in person to start and pay for the remittance.
+A person who sends money to family or friends in another country. He starts most transfers
+from the SendIt mobile app, linked to his bank account and card. He can also go to a SendIt
+branch and pay cash when he prefers to, or if a card payment fails.
 
 ## A day in their work
-- Aaron walks into a SendIt branch with cash or his card.
-- He states the amount he wants to send, the destination country, and the recipient's
-  details.
-- The agent verifies Aaron's identity (KYC) and creates the remittance.
-- Aaron is quoted the exchange rate and fee, confirms, and pays at the counter.
-- He receives a tracking code and a receipt, then leaves. He can check the remittance's
-  status later.
+- Aaron opens the SendIt app and signs in.
+- He enters the amount, the destination country, and the recipient's details.
+- The app shows the exchange rate, the fee, and the total to pay, fixed for 15 minutes.
+- He pays from his linked bank account or card. For a large amount, the app asks for an
+  extra KYC check first (a large-amount check).
+- He gets a tracking code and a receipt in the app, and shares the code with the recipient.
+- Another time he sends from a branch instead: the agent runs a KYC check on his ID in
+  person, he pays cash at the counter, and he leaves with a printed tracking code and
+  receipt.
+- He can check the status of any transfer later, in the app or with the tracking code.
+- Once, after a mistake in the recipient's details, he cancels the transfer in the app
+  before it is collected and gets the full amount back to his card.
 
 ## Needs
-- Needs a trustworthy intermediary to send money abroad to family or friends.
-- Needs to be able to pay in cash or by card, since he does not hold an international
-  bank account.
-- Needs to know upfront how much of his money will actually reach the recipient
-  (exchange rate + fee), before committing to pay.
-- Needs confirmation once the money has actually been collected.
+- One trustworthy intermediary to send money abroad, instead of a chain of middlemen.
+- To pay the way that suits him: from his bank account or card in the app, or in cash at a
+  branch.
+- To know upfront how much of his money actually reaches the recipient (exchange rate plus
+  fee) before he agrees to pay.
+- To get confirmation once SendIt has collected the money.
+- To get his money back in full if he cancels before the recipient collects.
 
 ## Current pains
-- "I don't want to spend too much on fees to transfer money to other countries."
-- "I don't want to go through too many intermediaries just so my money reaches the
-  recipient."
-- "My bank in the country where I live doesn't allow transfers to other countries' banks."
+- "I don't want to pay high fees to send money to another country."
+- "I don't want my money to pass through a long chain of middlemen before it arrives."
+- "My own bank either won't send to banks in other countries or charges too much for it."
+- "If I change my mind or make a mistake, I want my money back before it is handed over."
 
 ## What the system gives them
-- A single point of contact (SendIt) instead of a chain of intermediaries.
-- An upfront, binding quote (exchange rate + fee) before any money changes hands.
-- A tracking code to follow the remittance's status.
-- A receipt once the remittance has been paid out.
+- One point of contact (SendIt) instead of a chain of intermediaries.
+- A choice of channel: app, website, or branch.
+- A fixed quote (exchange rate plus fee) before any money moves.
+- A tracking code to follow the transfer.
+- A receipt once the remittance is paid out.
+- A cancel option any time before payout, with a full refund to the original payment method.
 
-## Associated acceptance criteria
-To be defined in `Eval-Spec.md` §11 (this persona's block).
+## Associated requirements
+`Eval-Spec.md` §11: R1, R2, R3, R6, R14, R15, R18, R20. Coverage for this persona is scored
+in `Eval-Results.md`.
