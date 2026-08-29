@@ -186,11 +186,9 @@ funding sources. Branch senders and all recipients have no account.
 
 | Service | What it does |
 |---|---|
-| Register Service | Registers a branch agent |
-| Login Service | Authenticates the agent at the counter |
-| Security Service | Session security, permissions and what each agent is allowed to do |
-| Sender Register Service | Registers an app or website sender: runs the KYC check and verifies ownership of the linked bank account or card |
-| Sender Login Service | Authenticates the app or website sender and opens the session that every remote remittance requires |
+| Register Service | Registers an account holder, whether a branch agent or an app or website sender. A sender sign-up also runs the KYC check and verifies ownership of the linked bank account or card; an agent sign-up does not |
+| Login Service | Authenticates the account holder, at the counter or from the app or website, and opens the session that every remote remittance requires |
+| Security Service | Session security, permissions and what each account holder is allowed to do |
 | Large-amount Check Service | Requests the extra KYC check when a remittance is over the large-amount threshold |
 
 Creating the remittance.
@@ -199,7 +197,7 @@ Creating the remittance.
 |---|---|
 | Registration Service | Registers the remittance: amount, corridor, recipient and payout channel |
 | Validation Service | Validates the remittance data: active corridor, complete recipient data, per-customer daily send limit across all channels |
-| KYC Service | Checks who the two parties are. Runs the KYC check on sender and recipient with the external provider and takes its verdict, including the User Risk flag. For a remote sender the sender check is the one done at registration plus, over the large-amount threshold, an extra check. Payment capture is blocked until it approves |
+| KYC Service | Checks who the sender is. Runs the sender's KYC check with the external provider and takes its verdict, including the User Risk flag. A branch sender is checked on every visit; a remote sender is checked once at sign-up, plus an extra check over the large-amount threshold. Payment capture is blocked until it approves. The recipient is checked later, at payout, by the Recipient KYC Service |
 | User Risk Service | Receives from the KYC Service the users the provider warns may be acting in bad faith, notifies the user and hands the case to the external security service |
 | Money exchange Service | Gets the rate from the FX provider and locks the quote for its validity window |
 | Transaction Code Service | Generates the tracking code |
@@ -472,14 +470,12 @@ Blue services are SendIt's own, green ones are the delivery channels of the noti
 yellow ones are the paths that only run under a specific condition, and pink ones are
 external systems. The circles marked BD are the points where state is stored.
 
-Both parties are KYC-checked by the KYC Service. When it returns a User Risk flag the User
+Each party is checked at its own moment: the sender by the KYC Service when the remittance
+is created, the recipient by the Recipient KYC Service before the money is released. When a
+check returns a User Risk flag the User
 Risk Service takes the case, notifies the user and hands it to the external security
 service; nothing advances until a verdict comes back. Notifications reach the user by
 email or SMS, and the recipient gets the tracking code the same way.
-
-App and website senders authenticate through the Sender Login Service, which opens the
-session every remote remittance requires; the Large-amount Check Service adds an extra KYC check when
-the amount is over the large-amount threshold.
 
 The reservation of money asks the reserve of the destination country. When the balance is
 not enough the Money Funding Service brings money in, taken from SendIt's own cash, then
@@ -490,6 +486,29 @@ A remittance that is already registered is handled by the Transaction Administra
 Service, which covers the cancellation of a remittance that has not been paid and the
 refund of the amount charged to the sender. A dispute about an already-paid remittance is a
 new case, not a change to this one.
+
+### Iteration 3
+
+![Iteration 3](images/iter3.png)
+
+The digital channel is added. A sender now reaches the flow from the app or the website as
+well as from the counter, and both paths authenticate through the same Login Service. Only
+the sign-up differs, because registering a remote sender runs a KYC check and a
+funding-source ownership check that registering an agent does not. A remote sender is
+therefore checked once at sign-up instead of on every visit, and the Large-amount Check
+Service asks for an extra check when the amount is over the large-amount threshold.
+
+Payment becomes a step of its own. The Payment Capture Service sits between the
+registration of the remittance and the transfer, so a remittance exists as Created before
+any money is taken and only becomes Collected once the charge succeeds. The KYC verdict
+gates it; a failure ends the remittance in Rejected with nothing charged.
+
+The payout side is closed. The Withdraw Service releases the money by either channel: cash
+at the branch, or a credit instruction to the Receiving Bank Service, which is the
+recipient's own bank and not the External Bank Service, which only tops up the reserve and
+never pays a recipient. The Receipt Service issues the proof to both parties, and the
+Expiration Service returns the reservation to the reserve when the 30-day collection
+window passes.
 
 ---
 

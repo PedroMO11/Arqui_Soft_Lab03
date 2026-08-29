@@ -13,8 +13,8 @@ payout, and can cancel a remittance on the sender's behalf.
   sender's ID, records the recipient's details, shows the exchange rate and fee, and takes
   cash or a card POS payment.
 - The system sets the payout amount aside in the destination-country reserve. Only then
-  does the remittance become ready for collection, and the sender gets a tracking code to
-  share with the recipient.
+  does the remittance become ready for collection, and SendIt sends the tracking code
+  straight to the recipient.
 - Hours or days later, at another branch (maybe in another country), a recipient arrives
   with the tracking code to collect cash. The agent KYC-checks their ID against the data on
   the remittance before releasing the money.

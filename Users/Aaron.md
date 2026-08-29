@@ -11,7 +11,8 @@ branch and pay cash when he prefers to, or if a card payment fails.
 - The app shows the exchange rate, the fee, and the total to pay, fixed for 15 minutes.
 - He pays from his linked bank account or card. For a large amount, the app asks for an
   extra KYC check first (a large-amount check).
-- He gets a tracking code and a receipt in the app, and shares the code with the recipient.
+- He gets a tracking code and a receipt in the app. SendIt sends the same code straight to
+  the recipient.
 - Another time he sends from a branch instead: the agent runs a KYC check on his ID in
   person, he pays cash at the counter, and he leaves with a printed tracking code and
   receipt.
