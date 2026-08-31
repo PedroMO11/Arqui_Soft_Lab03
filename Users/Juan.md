@@ -1,4 +1,4 @@
-# Juan Rodríguez — Recipient
+# Juan Rodríguez (Recipient)
 
 ## Role
 A person who receives a remittance sent by family or a friend from another country. He

@@ -1,6 +1,6 @@
 # SendIt - R.E.D.A.L.E.
 
-Case Study #3, remittance service.
+An international remittance service, with Western Union as the reference model.
 
 Model user: the Sender. He is the one who decides to use SendIt. The Recipient and the
 Branch Agent use the system but do not choose it.
@@ -93,21 +93,67 @@ SendIt at the counter:
 
 ### Non-functional requirements
 
-- Consistency. The money collected has to match the money payable. It cannot be paid twice
-  or lost.
-- Availability. The counter has to keep working when an external provider is slow or
-  unavailable.
-- Performance. Quote and status lookup have to respond fast enough for a person waiting at
-  a counter.
-- Security. Information is protected in transit and at rest, and the identity data of both
-  parties is only visible to those who need it.
-- Auditability. The history of each remittance stays available and readable for audit.
-- Scalability. The system has to support the volume estimated in section E.
+Targets are split by path. The **sending path** (quote, create, pay) and the **status
+lookup** are where a person is standing and waiting, so they get tight targets. The
+**payout path** is looser on purpose: the recipient has up to 30 days to collect, so a
+payout delayed by minutes, or retried an hour later, costs nothing.
+
+**Consistency**
+- Anything that touches money (payment capture, reservation, payout, refund, ledger) is
+  strongly consistent: one all-or-nothing database transaction. A reserve balance can
+  never go negative.
+- The status shown to sender and recipient may lag the true state by up to **5 seconds**
+  (served from read replicas and cache).
+
+**Availability (per month)**
+- Quote + create + pay: **99.9%** (about 43 min/month down).
+- Status lookup: **99.9%**.
+- Payout: **99.5%** (about 3.6 h/month) is acceptable: a missed payout is retried and the
+  recipient still has days left.
+- One external provider being down (KYC, gateway, one receiving bank, SMS) must not take
+  the counter down: the branch can still quote, create, and pay out cash for remittances
+  already `Ready for pickup`.
+
+**Latency (per request, at peak load)**
+- Quote: p50 < **300 ms**, p99 < **1 s** (the FX rate is cached, refreshed every 60 s).
+- Status lookup: p50 < **100 ms**, p99 < **400 ms**.
+- Create remittance (incl. sender KYC and limit checks): p99 < **5 s** (bounded by the
+  external KYC call).
+- Cash payout at the counter (ID match and release): p99 < **3 s**.
+
+**Money-available timing** (this is where "the recipient can wait days" is used)
+- Cash-funded remittance: `Ready for pickup` within **2 minutes** of payment.
+- Online-card-funded: within **24 hours** (held until the charge is past the immediate
+  chargeback window).
+- Bank-debit-funded: within **3 business days** (held until the debit settles).
+- Collection window after that: **30 days** (see Parameters).
+
+**Durability and recovery**
+- A committed money movement is never lost: **RPO = 0** for the transactional database
+  (synchronous replication).
+- **RTO <= 15 min** for the sending path; **RTO <= 2 h** for the payout path.
+
+**Security**
+- Card numbers are never stored; only gateway tokens (keeps SendIt in the smallest PCI
+  scope).
+- Personal documents and bank-account numbers are encrypted at rest (AES-256) and in
+  transit (TLS 1.2+).
+- Least privilege: an agent sees only their own branch's remittances; a refund needs a
+  supervisor.
+- The audit trail and the ledger are append-only and kept for **>= 7 years**.
+
+**Auditability**
+- Every money movement is one row in an append-only ledger. A reconciliation job runs
+  **daily** and raises an alert within **1 hour** if
+  `collected != paid + refunded + held + kept`.
+
+**Scalability**
+- Handle the section-E volume (1M remittances/day, ~700 req/s peak) and **3x that within
+  2 years** by adding country partitions and read replicas, with no redesign.
 
 ### Parameters
 
-Concrete values used by the requirements above. These mirror `Eval-Spec.md` §5.1; if the
-two ever differ, §5.1 is the source of truth.
+Concrete values used by the requirements above. Same values as `Eval-Spec.md` §5.1.
 
 | Parameter | Value |
 |---|---|
@@ -131,7 +177,7 @@ two ever differ, §5.1 is the source of truth.
 
 ## E - Estimate
 
-Inputs. Western Union is used as the reference for scale.
+Inputs. Western Union is the reference for scale.
 
 | Input | Value | Where it comes from |
 |---|---|---|
@@ -152,8 +198,10 @@ Load:
 Servers, taking 1 core at 5 req/s and a server of 32 cores at 160 req/s:
 - 700 / 160 = 4.4, so 5 application servers.
 - With N+1 redundancy in 3 regions: 30 application servers.
-- The limit is the database, not the CPU. There are only 60 writes/s but they have to be
-  serialized.
+- CPU is not the limit: 60 writes/s is nothing for PostgreSQL. The real limit is
+  **contention on one row: the destination reserve per country**, since many reservations
+  in the same country compete to update the same balance. See section E - Scale for how it
+  is split.
 
 Storage, calculated from the data model in section A. One remittance and everything it
 generates:
@@ -166,18 +214,90 @@ generates:
 | Reservation | 1 | 100 B | 100 B |
 | Payout order | 1 | 100 B | 100 B |
 | Receipt | 1 | 100 B | 100 B |
-| KYC check | 2 (recipient always; sender on branch remittances; for remote senders the one-time sign-up check and the occasional large-amount check are counted here as headroom) | 400 B | 800 B |
+| KYC check | 2 (recipient every remittance, plus the sender for branch remittances or the one-time sign-up check for remote senders) | 400 B | 800 B |
 | Audit event | 6, one per state change | 450 B | 2.7 KB |
-| Total | | | 5 KB |
+| Ledger entry | ~8, a debit and a credit per money movement | 120 B | ~1 KB |
+| Total | | | 6 KB |
 
-- 1M/day x 5 KB = 5 GB/day, 1.8 TB/year.
-- 10 years with 3 copies: 55 TB.
+- 1M/day x 6 KB = 6 GB/day, 2.2 TB/year.
+- 10 years with 3 copies: 66 TB.
 - Reference data is small: 500k agents and branches is around 170 MB, and corridors are a
   few dozen records.
+
+### Bandwidth
+
+One design choice keeps this small: **the ID-document photos go straight from the
+customer's device to the KYC provider's SDK; SendIt only receives the yes/no verdict.**
+Nothing heavy passes through SendIt.
+
+| Traffic | Peak rate | Avg size (req + resp) | Peak bandwidth |
+|---|---|---|---|
+| Status lookups | 580 req/s | ~1.3 KB | ~6 Mbps |
+| Sending path (create / pay / cancel) | 60 req/s | ~3 KB | ~1.5 Mbps |
+| Sessions, quotes, large-amount checks | 60 req/s | ~2 KB | ~1 Mbps |
+| Calls out to the KYC provider (data only) | ~120 req/s | ~4 KB | ~4 Mbps |
+| Calls out to payment gateway / receiving banks | ~45 req/s | ~2 KB | ~1 Mbps |
+| Notifications out (SMS + email provider) | ~460 msg/s | ~1.2 KB | ~4.5 Mbps |
+| Internal event bus (fan-out ~5) | ~300 msg/s | ~1 KB | ~2.5 Mbps |
+| DB replication + cross-region audit stream | steady | n/a | ~3 Mbps |
+| Nightly backup ship (4 h window) | n/a | 5 GB / 4 h | ~3 Mbps |
+
+**Peak aggregate ~25-30 Mbps per region**, about a third of it notifications and data-only
+KYC calls. Provision **100 Mbps per region** for headroom. Bandwidth is not a constraint;
+it would only become one if document images were routed through SendIt, which the design
+avoids.
 
 ---
 
 ## D - Design the services
+
+### Architecture
+
+**Choice: a 3-tier modular monolith for the synchronous core, plus an event-driven
+backbone for everything asynchronous.**
+
+| Pattern | Fits here? |
+|---|---|
+| **Monolith** | Mostly. Small team, and the domain is now well understood. But status reads must scale on their own, which a plain monolith does not give. |
+| **3-Tier** | Yes. Three channels (app, website, branch terminal) sit cleanly on one shared logic layer on one data layer. This is the shape used. |
+| **Microservices** | Not yet. One team, and the whole thing is a single money-consistency boundary; splitting it now buys distributed-transaction pain for no scaling gain. The module seams (Access, Create, Money movement, Payout, Status, Admin) are kept clean so it *can* be split later. |
+| **Event-driven** | Yes, for the async half. Notifications, KYC callbacks, receiving-bank confirmation, reserve top-up, funding-hold release and the expiration sweep are all fire-and-forget work, and because the recipient can wait days, moving them off the request path costs no user-visible delay. |
+
+So: one deployable app, 3-tier inside, modules along the service groups below. The
+synchronous request path (quote, create, pay, status, cash-payout ID match) is plain
+request/response. Everything else travels as a domain event on a message bus and is
+handled by workers.
+
+### Data store: relational (PostgreSQL)
+
+**The data is a set of tables that point at each other.** A remittance points to a quote,
+a corridor, a payment, a reservation, a payout order, a receipt, KYC checks and audit
+events. That is what a relational database is for. Four reasons it has to be relational
+here:
+
+1. **Money needs "all of it, or none of it".** Capturing a payment must, in one
+   indivisible step, mark the remittance `Collected`, write the payment row, write the
+   ledger entry and write the audit event. A relational database does that as a single
+   transaction; with most NoSQL stores it has to be built by hand.
+2. **Rules span several rows.** "Does this reservation still fit in what is left of the
+   country's reserve?" means read the reserve row, compare, and update it with nobody
+   slipping in between. That needs a row lock (`SELECT ... FOR UPDATE`), which relational databases
+   do and key-value stores do not.
+3. **The totals must match exactly** (`collected = paid + refunded + held + kept`). With a
+   ledger table that is one `SUM` query, run daily.
+4. **Auditors and finance people expect SQL.** "Every remittance on the Peru->US corridor
+   last month over US$ 5,000" is a `WHERE` clause, not a new index design.
+
+NoSQL's main strengths, a flexible schema and very high write throughput, do not help
+here: the shape is known and stable, and writes peak at ~60/s, which is small for
+PostgreSQL. Scale still comes where it grows: **reads** (status lookups, 10x the writes)
+go to read replicas and a cache; **writes** are split into **one database per destination
+country**, which is where the scarce, contended resource, the reserve, lives. Each
+remittance lives in its destination country's database; origin-side steps write to it from
+the origin application tier. ACID holds inside each country partition, which is all the
+money math needs.
+
+### Services
 
 Access and identity. Branch agents have an account. An agent works the counter; a
 supervisor is an agent who can also approve a cancellation and its refund. Senders who use
@@ -258,9 +378,63 @@ External systems.
 | External Bank Service | An outside bank, or any other funding source, that SendIt borrows from to top up a destination-country reserve when its own cash and corporate account do not cover a payout. It funds the reserve; it never pays the recipient |
 | Receiving Bank Service | The recipient's bank. Receives the credit instruction for a deposit payout and confirms it |
 
+### API design
+
+**REST + JSON over HTTPS** for every client-facing and partner-facing call. The app, the
+website and the branch terminal are all thin clients doing CRUD-shaped operations, which
+is what REST is built for. **Domain events on the message bus** for internal async work.
+GraphQL is not needed (few, stable resources); WebSocket is not needed (status is polled
+or pushed by notification, and the recipient can wait); gRPC is held in reserve for
+service-to-service calls if the monolith is ever split.
+
+Conventions:
+
+- Base path `/v1`; TLS 1.2+ only. Money is sent as **integer minor units + ISO currency
+  code** (`{"amount": 27000, "currency": "USD"}`) so there is no rounding drift and 0- and
+  3-decimal currencies just work.
+- `Idempotency-Key` (a UUID) is **required** on every money-moving `POST`. The server
+  stores the result under that key for 24 h and replays it on a retry, so a dropped
+  network reply can never create a second remittance or a second payout.
+- `Authorization: Bearer <session token>` for agent and sender calls; nothing for the
+  public status endpoint; an HMAC signature for provider webhooks.
+- Errors: `{"error": {"code": "...", "message": "...", "retriable": false}}` with the
+  matching HTTP status (`400` bad input, `401/403` auth, `409` wrong state, `422` business
+  rule, `429` rate limit, `503` a provider is down).
+- Lists are cursor-paginated (`cursor`, `limit`).
+
+Main endpoints:
+
+| Method and path | Who calls it | What it does |
+|---|---|---|
+| `POST /v1/quotes` | sender / agent / anonymous | Price a transfer: returns fee, rate, destination amount, total, `expiresAt` (15 min) |
+| `POST /v1/senders` | prospective remote sender | Sign up; runs the KYC check and the funding-source ownership check |
+| `POST /v1/senders/{id}/funding-sources` | remote sender | Link a bank account or card |
+| `POST /v1/sessions` / `DELETE /v1/sessions/current` | agent / sender | Log in (returns a session token) / log out |
+| `POST /v1/remittances` | sender / agent | Create from a `quoteId` + recipient + payout channel. Runs sender KYC, daily-limit and corridor checks. `201`, or `422 {code: kyc_failed \| daily_limit_exceeded \| user_risk_hold \| inactive_corridor}` |
+| `POST /v1/remittances/{id}/payment` | sender / agent | Capture payment (`cash` / `card_pos` / `bank_debit` / `card_online`). `200 {state: collected, fundsReadyBy}` or `402 payment_declined` |
+| `GET /v1/remittances/{id}` | the sender / an agent | Full detail (amounts, state, timestamps) |
+| `GET /v1/remittances?state=&cursor=` | signed-in sender / agent | List own or branch remittances |
+| `POST /v1/remittances/{id}/cancel` | the sender / a **supervisor** | Cancel before payout -> `{state: cancelled, refund: {amount, method, etaBusinessDays: 5}}`, or `409 already_paid` / `409 already_expired` |
+| `POST /v1/remittances/{id}/payout` | agent (cash) / internal worker (deposit) | Release the money. Runs the recipient KYC check + account-holder match. `200 {state: paid, receiptId}`, or `409 not_ready` / `422 recipient_kyc_failed` / `409 already_paid` |
+| `GET /v1/remittances/{id}/receipt` | sender / recipient / agent | Receipt document reference |
+| `GET /v1/status/{trackingCode}` | anyone, **no auth**, rate-limited | `{state, destinationAmount, destinationCurrency, collectBy, daysLeft}`, never anything that could authorize a payout |
+| `POST /v1/webhooks/kyc` | KYC provider | Verdict + User Risk flag (HMAC-signed) |
+| `POST /v1/webhooks/payment` | payment gateway | Settlement and chargeback events |
+| `POST /v1/webhooks/receiving-bank` | receiving bank | Deposit confirmed / failed |
+
+Internal events on the bus (not HTTP): `remittance.collected`, `reservation.held`,
+`reservation.failed`, `remittance.ready`, `remittance.paid`, `remittance.cancelled`,
+`remittance.expired`, `userrisk.raised`, `funds.hold.released`. Workers turn these into
+notifications, receiving-bank instructions, reserve top-ups and the expiration sweep.
+
 ---
 
 ## A - Data model
+
+All money amounts are stored as **integer minor units** of the row's currency (cents, or
+whole yen for JPY, or thousandths for KWD), not as decimals. That removes rounding drift
+and handles currencies with 0 or 3 decimal places. The tables below write them as
+`decimal(x,2)` to stay readable; the stored form is the integer.
 
 **Agent**
 | Attribute | Data type |
@@ -368,8 +542,10 @@ External systems.
 | id | integer |
 | country | string(2) |
 | currency | string(3) |
+| bucket | integer, 0 by default; only > 0 if the row is sharded because it runs hot |
 | available_amount | decimal(18,2) |
 | reserved_amount | decimal(18,2) |
+| version | integer, bumped on every update (optimistic lock) |
 
 **Reservation**
 | Attribute | Data type |
@@ -427,6 +603,22 @@ External systems.
 | state_before | string(20) |
 | state_after | string(20) |
 | occurred_at | datetime |
+
+**Ledger entry**, append-only, one per money movement (double-entry: every movement writes a matching debit and credit)
+| Attribute | Data type |
+|---|---|
+| id | integer |
+| remittance_id | integer |
+| movement | enum: collected, reserved, paid, refunded, expired_kept, hold_placed, hold_released, borrow_in, borrow_repaid |
+| account | enum: sender_funds, destination_reserve, sendit_revenue, borrowed_funds |
+| direction | enum: debit, credit |
+| amount_minor | integer |
+| currency | string(3) |
+| occurred_at | datetime |
+
+The Audit event records state changes: who moved the remittance from one state to the next.
+The Ledger entry records money movements. The daily reconciliation adds up the ledger and
+checks `collected = paid + refunded + held + kept`.
 
 ### Remittance states
 
@@ -510,6 +702,22 @@ never pays a recipient. The Receipt Service issues the proof to both parties, an
 Expiration Service returns the reservation to the reserve when the 30-day collection
 window passes.
 
+### Building blocks
+
+On top of the services, the running system uses standard infrastructure:
+
+| Block | Role here |
+|---|---|
+| Load balancer + API gateway | TLS termination, auth, and rate limiting at the edge (the public `GET /v1/status/{code}` is rate-limited here) |
+| Application servers | The modular-monolith app, 30 of them (from the Estimate), stateless behind the balancer |
+| PostgreSQL, one primary per destination country | The transactional store; each holds that country's reserve, remittances and ledger |
+| Read replicas + cache | Serve status lookups (10x the write traffic) off the primary |
+| Message bus | Carries the domain events (`remittance.collected`, `reservation.held`, `remittance.paid`, `userrisk.raised`, ...) to the workers |
+| Workers | Consume events: send notifications, instruct the receiving bank, run reserve top-ups, release funding holds |
+| Scheduler | Fires the expiration sweep, the funding-hold release and the daily reconciliation |
+| Object storage | Holds receipt documents; the DB keeps only the reference |
+| Provider adapters | One per external system (KYC, payment gateway, FX, receiving banks, SMS/email, borrowing bank), so one being slow or down does not stall the request path |
+
 ---
 
 ## E - Scale
@@ -518,5 +726,6 @@ window passes.
 |---|---|---|
 | One branch | Nothing | One server and one database |
 | One country | Status lookups are more frequent than anything else | Read replicas and a cache for the lookup |
-| Several countries | Reserve per country and cross-border latency | One reserve and one database per country. The corridor is the unit of partitioning |
-| Full scale, 150M users | Serialization of the payout | 30 application servers, from the Estimate section. Each remittance stays in a single database so the payout can be controlled there |
+| Several countries | Reserve per country and cross-border latency | One database per **destination** country; the partition key is the destination country. Each remittance lives in its destination country's database (that is where the reserve is); origin-side steps write to it from the origin application tier |
+| Full scale, 150M users | Contention on one reserve row per country | Guard the reserve row with a row lock or a single-writer queue per (country, currency). If one row still runs hot, shard the reserve into buckets per (country, currency) and pick a bucket per reservation. App tier scales out to the 30 servers from the Estimate; the DB scales by adding country partitions |
+| Read traffic (10x writes) | Status endpoint | Read replicas + cache, and a rate limit on `GET /v1/status/{code}` at the API gateway |

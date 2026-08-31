@@ -1,4 +1,4 @@
-# SendIt (Branch Agent) — Intermediary
+# SendIt Branch Agent (Intermediary)
 
 ## Role
 SendIt itself, working at the counter of a physical branch. It serves the sender on the

@@ -1,16 +1,9 @@
-# SendIt (Easy Peazy) — Domain Context
-
-> This document is raw material, not the deliverable. The deliverable is `Eval-Spec.md`.
-> Case study: "Design a system that lets people send remittances to people in different
-> countries. Security matters a lot, and so does data consistency, since we're talking
-> about money." (Design duration: 4h)
-
----
+# SendIt: Domain Context
 
 ## 1. Context
 
 SendIt is an international remittance platform, modeled on a real remittance service
-(Western Union is the reference). It moves money from a person in one country (the
+(Western Union is the reference model). It moves money from a person in one country (the
 **Sender**) to another person in a different country (the **Recipient**). SendIt is the
 intermediary for the whole trip; it does not hand payout off to an outside partner. The
 money flows like this:
@@ -27,8 +20,8 @@ money flows like this:
    **cash pickup at a SendIt branch** in the destination country, or **deposit into the
    recipient's bank account**.
 5. Before releasing the money, SendIt runs a **KYC check** on the recipient (at the counter
-   for cash, or with the KYC provider for bank deposit). This is where the security of the
-   whole system is decided.
+   for cash, or with the KYC provider for bank deposit). This step decides the security of
+   the whole system.
 
 SendIt's money is never without an owner. At every moment it is in the sender's hands (not
 yet sent), in SendIt's hands (collected, reserved, waiting for payout), in the recipient's
@@ -51,10 +44,10 @@ chose (cash pickup at a branch, or bank deposit), leaving an auditable trail of 
 of money that comes in, goes out, or is refunded.
 
 The design treats **security** (nobody collects a remittance that is not theirs, no
-remittance is created without a KYC check, flagged people are held and handed to a Security service) and
-**data consistency** (a collected amount always matches a payable amount, a remittance is
-never paid out twice, the destination reserve totals add up, a transaction's record is never
-lost) as first-class requirements, on the same level as the sending feature itself.
+remittance is created without a KYC check, a flagged sender or recipient is held and handed
+to a Security service) and **data consistency** (a collected amount always matches a
+payable amount, a remittance is never paid out twice, the destination reserve totals add
+up, a transaction's record is never lost) as core requirements, not add-ons.
 
 ---
 
@@ -98,14 +91,14 @@ lost) as first-class requirements, on the same level as the sending feature itse
 | Excluded | Reason |
 |---|---|
 | Recipient payout by card or digital wallet | The recipient has exactly two options: cash at a branch or bank deposit |
-| Building our own card processor or storing full card numbers | Card payments (branch POS and online) go through a PCI payment gateway; SendIt connects as a merchant |
-| Sanctions / PEP list screening and full AML transaction monitoring | SendIt acts on the KYC provider's User Risk flag, but its own list checks and pattern monitoring are a larger effort, deferred. A known gap for a real deployment |
+| Building our own card processor or storing full card numbers | Card payments (branch POS and online) go through a PCI payment gateway; SendIt connects as a client of the gateway |
+| Sanctions / PEP list screening and full AML transaction monitoring | SendIt acts on the KYC provider's User Risk flag, but building its own list checks and pattern monitoring is out of the current scope. A production system would need it |
 | Determining market exchange rates | An external FX provider gives the rate; SendIt only uses it |
 | Running the KYC checks themselves (document and biometric matching) | An external KYC provider does this; SendIt only reads the result and the User Risk flag |
 | Sourcing physical cash into a branch till | The destination reserve is modelled as balances, not as cash-in-transit logistics |
 | SendIt's own company accounting and taxes | Corporate back-office, not part of the remittance domain |
 | Opening bank accounts or issuing cards for senders or recipients | SendIt moves money, it is not a bank |
-| Reversal or dispute of an already-`Paid` remittance | A `Paid` remittance is final in this exercise; cancellation and refund before payout are in scope |
+| Reversal or dispute of an already-`Paid` remittance | A `Paid` remittance is final; cancellation and refund before payout are in scope |
 
 ---
 
@@ -122,7 +115,7 @@ lost) as first-class requirements, on the same level as the sending feature itse
 |---|---|
 | SendIt Branch Agent | Person at the branch counter who serves the sender (takes payment, runs the KYC check, creates the remittance, cancels on the sender's behalf) and the recipient (KYC-checks, hands over cash). This is SendIt itself acting as intermediary; there is no outside third party. Remote transfers are self-service and do not involve an agent. See [Users/SendIt.md](Users/SendIt.md) |
 
-> No other internal personas (compliance, support, treasury) are modeled in this exercise.
+> No other internal personas (compliance, support, treasury) are modeled here.
 > All internal branch operations fall on the Branch Agent.
 
 ### Integrations (non-human actors)
@@ -180,47 +173,47 @@ lost) as first-class requirements, on the same level as the sending feature itse
 
 ## 6. Processes
 
-1. **Sender KYC check** — Branch: the agent KYC-checks the sender's ID on every visit,
+1. **Sender KYC check.** Branch: the agent KYC-checks the sender's ID on every visit,
    before creating a remittance. Remote: the sender passes a KYC check and proves
    funding-source ownership once at registration, and each later transfer needs a
-   logged-in session (plus an extra KYC check for large amounts (the large-amount check)). There is no exempt
-   amount.
-2. **Quoting** — the sender states the amount, destination country and currency, and the
+   logged-in session, plus an extra KYC check for large amounts (the large-amount check).
+   There is no exempt amount.
+2. **Quoting.** The sender states the amount, destination country and currency, and the
    payout channel for the recipient. The system asks the FX provider for the corridor rate
    and computes the fee, then locks the quote for a limited time.
-3. **Remittance creation** — the sender confirms the recipient's details and accepts the
+3. **Remittance creation.** The sender confirms the recipient's details and accepts the
    quote. The remittance is created in `Created` status. If the KYC provider returns a User
    Risk flag, the remittance is held and the case goes to the external Security service.
-4. **Collecting payment from the sender** — Branch: the agent takes cash or a card POS
+4. **Collecting payment from the sender.** Branch: the agent takes cash or a card POS
    payment. Remote: SendIt debits the linked bank account or charges the online card
    through the gateway. On success the remittance moves to `Collected`.
-5. **Reserving and making it available** — the system reserves the payout amount against
+5. **Reserving and making it available.** The system reserves the payout amount against
    the destination-country reserve, topping the reserve up (own funds, then corporate
    account, then borrowed from an outside bank) if it is short. Once reserved, the remittance moves to
    `Ready for pickup`, a tracking code is generated, and the **collection window**
    (30 days) starts.
-6. **Notifying the recipient** — SendIt tells them a remittance is available and gives them
+6. **Notifying the recipient.** SendIt tells them a remittance is available and gives them
    the tracking code. From here, either party can look up the status with just the tracking
    code, with no account.
-7. **Recipient KYC check and settlement**:
+7. **Recipient KYC check and settlement.**
    - Cash channel: the recipient goes to a SendIt branch and the agent KYC-checks their
      identity against the name on the remittance, then hands over the cash.
    - Bank deposit channel: SendIt KYC-checks the recipient with the KYC provider and, on
      success, sends the crediting instruction to the receiving bank.
    - In both cases, once delivery is confirmed the reservation is consumed, the remittance
      moves to `Paid`, and a **Receipt** is issued.
-8. **Cancellation and refund** — while a remittance is `Created`, `Collected`, or `Ready
-   for pickup`, the sender (in the app or web, or through an agent) can cancel it. Any
+8. **Cancellation and refund.** While a remittance is `Created`, `Collected`, or `Ready
+   for pickup`, the sender (in the app or website, or through an agent) can cancel it. Any
    reservation is released back to the reserve. If money had been collected, a **Refund**
    of `total_charged_to_sender` is issued to the original payment method. The remittance
    moves to `Cancelled`.
-9. **Expiration** — if a `Ready for pickup` remittance is not collected within 30 days, it
+9. **Expiration.** If a `Ready for pickup` remittance is not collected within 30 days, it
    automatically moves to `Expired`, the reservation is released, SendIt retains the funds,
    and neither the sender is refunded nor the recipient is paid.
-10. **User Risk hand-off** — a held remittance waits on the Security service's verdict.
+10. **User Risk hand-off.** A held remittance waits on the Security service's verdict.
     Cleared: it resumes. Confirmed: it moves to `Rejected`, with a refund if money had been
     collected.
-11. **Other exceptions** — a remittance whose sender KYC check or payment fails never
+11. **Other exceptions.** A remittance whose sender KYC check or payment fails never
     reaches `Collected` and is marked `Rejected` instead (money was never taken, so there
     is nothing to refund).
 
@@ -290,7 +283,7 @@ lost) as first-class requirements, on the same level as the sending feature itse
 | Tracking code | Unique identifier used to check status and to collect | `TrackingCode` |
 | Collection window | Days the recipient has to collect before it expires (**30 days**) | `CollectionWindow` |
 | KYC check | Record of verifying a sender or recipient, with any User Risk flag | `KycCheck` |
-| User Risk flag | KYC provider signal that a party may be a malicious actor | `UserRiskFlag` |
+| User Risk flag | KYC provider signal that a party may be acting in bad faith | `UserRiskFlag` |
 | Daily send limit | Max a customer can send per rolling 24h across all channels (**US$ 50,000**) | `DailySendLimit` |
 | Destination reserve | Pool of funds SendIt holds in a destination country to pay recipients | `DestinationReserve` |
 | Reservation | Hold on a destination reserve for one remittance's payout | `Reservation` |

@@ -1,9 +1,9 @@
-# Aaron Camacho — Sender
+# Aaron Camacho (Sender)
 
 ## Role
 A person who sends money to family or friends in another country. He starts most transfers
 from the SendIt mobile app, linked to his bank account and card. He can also go to a SendIt
-branch and pay cash when he prefers to, or if a card payment fails.
+branch and pay cash when he would rather, or if a card payment fails.
 
 ## A day in their work
 - Aaron opens the SendIt app and signs in.

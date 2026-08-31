@@ -1,4 +1,4 @@
-# SendIt — Eval-Spec
+# SendIt Eval-Spec
 
 > Domain context: [README.md](README.md). Personas: [Users/Aaron.md](Users/Aaron.md)
 > (Sender), [Users/Juan.md](Users/Juan.md) (Recipient), [Users/SendIt.md](Users/SendIt.md)
@@ -77,13 +77,13 @@ remittance without an account.
 |---|---|
 | Recipient payout by card or digital wallet | The recipient has exactly two options: cash at a branch or bank deposit |
 | Building our own card processor or storing full card numbers | Card payments (branch card reader and online) go through a payment gateway that meets the card-industry security standard (PCI); SendIt is a client of that gateway, it does not build one |
-| Checking names against sanctions and politically-exposed-person (PEP) lists, and full anti-money-laundering (AML) monitoring of spending patterns | SendIt acts on the KYC provider's User Risk flag (§5.3), but building its own list checks and pattern monitoring is beyond this exercise. Noted as a gap for a real deployment |
+| Checking names against sanctions and politically-exposed-person (PEP) lists, and full anti-money-laundering (AML) monitoring of spending patterns | SendIt acts on the KYC provider's User Risk flag (§5.3), but building its own list checks and pattern monitoring is out of the current scope. A production system would need it |
 | Computing market exchange rates | An external FX provider gives the rate; SendIt only uses it |
 | Running the KYC checks themselves (document and biometric matching) | An external KYC provider does this; SendIt only reads the result and the User Risk flag |
 | Getting physical cash into a branch till | Branch cash logistics are an operations job; the destination reserve (§5) is tracked as balances, not as truck schedules |
 | SendIt's own company accounting and taxes | Back-office work, not part of the remittance flow |
 | Opening bank accounts or issuing cards for senders or recipients | SendIt moves money, it is not a bank |
-| Reversing or disputing an already-`Paid` remittance | A `Paid` remittance is final in this exercise; a later dispute is a new case, not an edit to this one. Cancelling and refunding *before* payout are in scope (§5.3) |
+| Reversing or disputing an already-`Paid` remittance | A `Paid` remittance is final; a later dispute is handled as a new case, not an edit to this one. Cancelling and refunding *before* payout are in scope (§5.3) |
 | Recipient accounts | The recipient never needs an account. A sender needs an account only to use the app or website, never for a branch transfer and never for status lookup |
 
 ---
@@ -93,7 +93,7 @@ remittance without an account.
 - **Remittance**: the transfer that moves money from a Sender to a Recipient across a
   Corridor, converted at a locked Quote and identified by a Tracking Code.
 - **Corridor**: a country pair SendIt has switched on, with its currencies, for example
-  Peru → United States (PEN → USD). A remittance cannot exist outside an active corridor.
+  Peru to United States (PEN to USD). A remittance cannot exist outside an active corridor.
 - **Quote**: the exchange rate and fee fixed when the remittance is created, valid for a
   short time.
 - **Sending channel**: where the sender starts and pays for the transfer (mobile app,
@@ -124,8 +124,8 @@ remittance without an account.
 - **Reservation**: the hold placed on the Destination Reserve for one remittance's payout
   amount. It is used up when the remittance is paid, and released back to the reserve if
   the remittance expires or is cancelled.
-- **Cancellation**: the sender's decision (in the app or web, or through an agent) to end a
-  remittance before it is paid. It moves the remittance to `Cancelled`.
+- **Cancellation**: the sender's decision (in the app or website, or through an agent) to
+  end a remittance before it is paid. It moves the remittance to `Cancelled`.
 - **Refund**: the return of `total_charged_to_sender` to the sender, by the same payment
   method they used, after a cancellation of a remittance that had money collected.
 
@@ -145,7 +145,7 @@ remittance without an account.
 | User Risk action | On a User Risk flag from the KYC provider: **hold the remittance, tell the user, hand the case to the external Security service**. Nothing moves on until the case is cleared; a confirmed case ends the remittance in `Rejected` and blocks the sender's account | Create-remittance gate; Security hand-off job |
 | Quote validity window | **15 minutes** from issue, then it must be recalculated | Quote; remittance creation |
 | Remittance states | **7**: `Created`, `Collected`, `Ready for pickup`, `Paid`, plus final `Rejected`, `Expired`, `Cancelled` | Remittance entity |
-| Destination Reserve funding order | When the reserve cannot cover a remittance: **1) SendIt's own money already collected in that country, 2) SendIt corporate account, 3) money borrowed from an outside bank (or similar source)** — in that order | Reservation step (§9 flow 4) |
+| Destination Reserve funding order | When the reserve cannot cover a remittance: **1) SendIt's own money already collected in that country, 2) SendIt corporate account, 3) money borrowed from an outside bank (or similar source)**, in that order | Reservation step (§9 flow 4) |
 | Cancellation window | A remittance can be cancelled while `Created`, `Collected`, or `Ready for pickup`. Never once `Paid` or `Expired` | Cancel flow (§9) |
 | Refund on cancellation | **100% of `total_charged_to_sender`**, returned by the same payment method the sender used, target **5 business days**. Assumed value | Refund step (§9) |
 | Tracking code format | **10 characters**, uppercase letters and digits, checked for repeats when issued | Remittance; status lookup |
@@ -159,7 +159,7 @@ remittance without an account.
 **Amount the recipient can collect:**
 
 ```
-destination_amount = origin_amount × exchange_rate
+destination_amount = origin_amount x exchange_rate
 total_charged_to_sender = origin_amount + fee
 ```
 
@@ -173,7 +173,7 @@ the market rate has moved since.
 - `origin_amount` = **S/ 1,000.00** (PEN)
 - `exchange_rate` (PEN to USD, locked at quote time) = **0.27**
 - `fee` = **S/ 35.00** (flat, set per corridor)
-- `destination_amount` = 1,000.00 × 0.27 = **US$ 270.00**
+- `destination_amount` = 1,000.00 x 0.27 = **US$ 270.00**
 - `total_charged_to_sender` = 1,000.00 + 35.00 = **S/ 1,035.00**
 
 Aaron is charged **S/ 1,035.00**. Juan collects **US$ 270.00**. If Juan does not collect
@@ -224,9 +224,9 @@ full **S/ 1,035.00** by the payment method he used.
 
 ## 6. Users and Their Needs
 
-The model user is the **Sender**: the person who brings money into the system and decides
-the transfer. The Recipient and the Branch Agent are supporting users. Most of the security
-rules exist to protect the sender's money on its way to the right recipient.
+The model user is the **Sender**: the person who puts money into the system and decides the
+transfer. The Recipient and the Branch Agent are supporting users. Most of the security
+rules protect the sender's money until it reaches the right recipient.
 
 | Persona | Role | Main needs | Profile |
 |---|---|---|---|
@@ -240,18 +240,18 @@ rules exist to protect the sender's money on its way to the right recipient.
 
 | Decision | Reason |
 |---|---|
-| SendIt pays out every remittance itself; when a destination reserve is short it borrows from an outside bank only to top the reserve up | The case frames SendIt as the full intermediary (README §1). The outside bank never touches the recipient or the payout; it is a money source for the reserve when SendIt's own funds in a country fall short. That keeps the "single intermediary" promise while making destination money real |
+| SendIt pays out every remittance itself; when a destination reserve is short it borrows from an outside bank only to top the reserve up | The case frames SendIt as the full intermediary (README §1). The outside bank never touches the recipient or the payout; it only supplies the reserve when SendIt's own funds in a country fall short. SendIt stays the single intermediary and the destination side is still funded |
 | A sender can send from the app, the website, or a branch | Matches how a real remittance service works (for example Western Union). The app and web reach senders who have a bank account or card; the branch reaches senders who want to pay cash |
 | Remote payment is a debit from a linked bank account or an online card | Both are common ways to pay for a transfer. Card payments (online and on the branch card reader) go through a PCI payment gateway, so SendIt never stores card data |
 | Remote senders pass a KYC check once at sign-up, plus a session per transfer and an extra check for large amounts; branch senders are KYC-checked every visit | This is how remittance apps work in practice. A logged-in session is the per-transfer control for a remote sender. A branch sender has no account, so the check is repeated in person |
-| SendIt acts on the KYC provider's User Risk flag, but does not build its own AML or sanctions checks | The User Risk flag is a cheap, concrete control that fits the exercise: hold and hand off. Its own list checks and pattern monitoring are a separate, larger effort, deferred (§4, §10) |
-| A hard per-customer cap of US$ 50,000 sent within any 24 hours, across all channels | Limits SendIt's exposure to any single customer and gives the data-consistency story a concrete control. 50k is assumed; confirm against real risk policy. This is a block, unlike the US$ 1,000 large-amount check, which only adds a step |
-| Every remittance needs the sender KYC-checked, with no amount exemption | Removes a whole class of "was this sender exempt?" cases and matches the instruction that any amount needs verification |
+| SendIt acts on the KYC provider's User Risk flag, but does not build its own AML or sanctions checks | The User Risk flag is a cheap, concrete control: hold and hand off. Its own list checks and pattern monitoring are a separate, larger effort, left for later (§4, §10) |
+| A hard per-customer cap of US$ 50,000 sent within any 24 hours, across all channels | Limits SendIt's exposure to any single customer and gives data consistency a concrete control. The 50k figure is assumed and should be checked against real risk policy. Unlike the US$ 1,000 large-amount check, which only adds a step, this one blocks the transfer |
+| Every remittance needs the sender KYC-checked, with no amount exemption | No "was this sender exempt?" edge cases, and it matches the rule that any amount needs verification |
 | The sender can cancel and be refunded any time before payout; expiry after 30 days is not a refund | Two different endings. Cancel is a deliberate sender action, so the money goes back in full. Expiry is abandonment, so SendIt keeps it and its exposure stays limited |
-| A remittance is not made ready for pickup until its payout amount is set aside in the destination country | Directly answers the agent's "there's no money to pay the recipient" pain, and keeps the money supply honest: nothing is promised to a recipient that is not already set aside |
-| Status lookup needs no account | Serves Juan's and Aaron's need to follow a remittance without signing up. The tracking code is a read-only key to status |
+| A remittance is not made ready for pickup until its payout amount is set aside in the destination country | Answers the agent's "there's no money to pay the recipient" pain: nothing is promised to a recipient unless it is already set aside |
+| Status lookup needs no account | Lets Juan and Aaron follow a remittance without signing up. The tracking code is a read-only key to status |
 | The recipient has exactly two payout channels: cash and bank deposit | Matches the case constraint and keeps the "exactly N" claims in §5.1 short and countable |
-| Payout is one all-or-nothing step, not a check-then-act in two steps | Directly prevents the double-payout problem the branch agent named as a top concern |
+| Payout is one all-or-nothing step, not a check-then-act in two steps | Prevents the double-payout problem |
 
 ---
 
@@ -365,10 +365,10 @@ releases.
 
 ## 11. Requirements
 
-One flat list. Each requirement is something the system must do, traced to the persona need
-or pain it resolves, with a check that can be verified against this document.
-**(Critical)** marks a requirement whose failure invalidates the design. The spec is scored
-against this list in `Eval-Results.md`; the score does not live here.
+A flat list. Each requirement is something the system must do, tied to the persona need or
+pain it resolves, with a check that can be verified against this document. **(Critical)**
+marks a requirement whose failure invalidates the design. `Eval-Results.md` scores the spec
+against this list.
 
 | # | The system must... | Anchor (persona: pain / need, or case constraint) | Acceptance check |
 |---|---|---|---|
@@ -394,7 +394,7 @@ against this list in `Eval-Results.md`; the score does not live here.
 | R20 | Let the sender (in the app or web) or an agent on the sender's behalf cancel a remittance any time before it is `Paid`; cancelling releases any reservation and, if money was collected, refunds 100% of `total_charged_to_sender` by the same payment method the sender used (§5.1, §5.3, §9) | Aaron: pain "if I change my mind or make a mistake, I want my money back before it is handed over" | Cancelling a `Ready for pickup` remittance sets it to `Cancelled`, releases the reservation, and issues a full refund by the same method; cancelling a `Paid` or `Expired` remittance is refused |
 | R21 | Not move a remittance from `Collected` to `Ready for pickup` until its payout amount is set aside against the destination-country reserve, topping the reserve up from SendIt's own funds, then the corporate account, then money borrowed from an outside bank, in that order (§5.1, §5.3, §9) **(Critical)** | SendIt: pain "there's no money set aside in the destination country and I can't pay the recipient" | A `Collected` remittance with a short reserve does not become `Ready for pickup` until the reserve is topped up; the hold is visible against the remittance |
 | R22 | On a User Risk flag from the KYC provider, hold the remittance, tell the user, and hand the case to the external Security service; the remittance does not move on until the case is cleared, and a confirmed case ends it in `Rejected` and blocks the sender's account (§5.1, §5.3, §9) | Case: "security matters a lot"; SendIt: keep bad actors out of the flow | A flagged party's remittance is held with a hand-off record and a user notification; clearing carries it on, confirming ends it in `Rejected` with a refund if money was collected and blocks the account |
-| R23 | Use up a reservation only on payout and release it back to the reserve on expiry or cancellation, so the reserve's free, held, and used-up totals always add up (§5.3) | Case: "data consistency" | The reserve's numbers add up across free → held → used-up / released for any period |
+| R23 | Use up a reservation only on payout and release it back to the reserve on expiry or cancellation, so the reserve's free, held, and used-up totals always add up (§5.3) | Case: "data consistency" | The reserve's numbers add up across free, held, and used-up or released for any period |
 
 ### Critical requirements
 
