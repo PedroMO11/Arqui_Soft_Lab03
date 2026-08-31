@@ -1,6 +1,6 @@
 # SendIt - R.E.D.A.L.E.
 
-An international remittance service, with Western Union as the reference model.
+An international remittance service.
 
 Model user: the Sender. He is the one who decides to use SendIt. The Recipient and the
 Branch Agent use the system but do not choose it.
@@ -52,7 +52,9 @@ SendIt at the counter:
 - Without a record that cannot be modified there is no way to prove what was collected and
   what was paid.
 
-### Functional requirements
+### Requirements
+
+The system must:
 
 - Register branch agents, authenticate them at the counter and control what each one can
   do according to his role.
@@ -79,8 +81,8 @@ SendIt at the counter:
 - Notify sender and recipient on each change of state.
 - Reserve the payout amount in the destination country before announcing the money as
   available.
-- Take the reserved funds from SendIt's own cash, from the corporate account or from bank
-  partners, in that order.
+- Take the reserved funds from SendIt's own cash, from the corporate account or from an
+  outside bank, in that order.
 - Pay out as cash at a branch or as a deposit into a bank account.
 - Allow one single payout per remittance.
 - Let the sender, or an agent on his behalf, cancel a remittance any time before it is
@@ -91,12 +93,10 @@ SendIt at the counter:
 - Issue a receipt when the remittance is paid.
 - Register every change of state in a record that cannot be modified afterwards.
 
-### Non-functional requirements
-
-Targets are split by path. The **sending path** (quote, create, pay) and the **status
-lookup** are where a person is standing and waiting, so they get tight targets. The
-**payout path** is looser on purpose: the recipient has up to 30 days to collect, so a
-payout delayed by minutes, or retried an hour later, costs nothing.
+The quality targets follow the path. The sending path (quote, create, pay) and the status
+lookup are where a person is standing and waiting, so they get tight targets. The payout
+path is looser on purpose: the recipient has up to 30 days to collect, so a payout delayed
+by minutes, or retried an hour later, costs nothing.
 
 **Consistency**
 - Anything that touches money (payment capture, reservation, payout, refund, ledger) is
@@ -253,20 +253,15 @@ avoids.
 
 ### Architecture
 
-**Choice: a 3-tier modular monolith for the synchronous core, plus an event-driven
-backbone for everything asynchronous.**
+A 3-tier modular monolith for the synchronous core, plus an event-driven backbone for
+everything asynchronous.
 
-| Pattern | Fits here? |
-|---|---|
-| **Monolith** | Mostly. Small team, and the domain is now well understood. But status reads must scale on their own, which a plain monolith does not give. |
-| **3-Tier** | Yes. Three channels (app, website, branch terminal) sit cleanly on one shared logic layer on one data layer. This is the shape used. |
-| **Microservices** | Not yet. One team, and the whole thing is a single money-consistency boundary; splitting it now buys distributed-transaction pain for no scaling gain. The module seams (Access, Create, Money movement, Payout, Status, Admin) are kept clean so it *can* be split later. |
-| **Event-driven** | Yes, for the async half. Notifications, KYC callbacks, receiving-bank confirmation, reserve top-up, funding-hold release and the expiration sweep are all fire-and-forget work, and because the recipient can wait days, moving them off the request path costs no user-visible delay. |
+Logic layer is shared for the three channels: mobile app, website and branch terminal.
 
-So: one deployable app, 3-tier inside, modules along the service groups below. The
-synchronous request path (quote, create, pay, status, cash-payout ID match) is plain
-request/response. Everything else travels as a domain event on a message bus and is
-handled by workers.
+Asyncronous work: notificacions, KYC callbacks, etc when the end user can wait hours or days.
+
+The synchronous request path (quote, create, pay, status, cash-payout ID match) is plain
+request/response.
 
 ### Data store: relational (PostgreSQL)
 

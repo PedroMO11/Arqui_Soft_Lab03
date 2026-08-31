@@ -2,8 +2,8 @@
 
 ## 1. Context
 
-SendIt is an international remittance platform, modeled on a real remittance service
-(Western Union is the reference model). It moves money from a person in one country (the
+SendIt is an international remittance platform, modeled on a real remittance service. It
+moves money from a person in one country (the
 **Sender**) to another person in a different country (the **Recipient**). SendIt is the
 intermediary for the whole trip; it does not hand payout off to an outside partner. The
 money flows like this:
